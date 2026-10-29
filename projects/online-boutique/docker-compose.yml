@@ -1,0 +1,124 @@
+# Baseline deployment of Google Online Boutique v0.10.7.
+#
+# This file is a faithful Docker Compose translation of the upstream
+# release/kubernetes-manifests.yaml (same images, ports and environment).
+# It contains no BranchBox components at all: it is the "stable, shared
+# baseline" that every sandbox is layered on top of. BranchBox attaches to
+# it through docker-compose.branchbox.yml, so this file can be replaced by
+# any other application's compose file without touching BranchBox.
+#
+# Deliberately omitted from upstream:
+#   - loadgenerator            (synthetic traffic, not needed for demos)
+#   - shoppingassistantservice (requires Google Gemini + AlloyDB)
+
+name: online-boutique
+
+services:
+  frontend:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/frontend:v0.10.7
+    environment:
+      PORT: "8080"
+      PRODUCT_CATALOG_SERVICE_ADDR: productcatalogservice:3550
+      CURRENCY_SERVICE_ADDR: currencyservice:7000
+      CART_SERVICE_ADDR: cartservice:7070
+      RECOMMENDATION_SERVICE_ADDR: recommendationservice:8080
+      SHIPPING_SERVICE_ADDR: shippingservice:50051
+      CHECKOUT_SERVICE_ADDR: checkoutservice:5050
+      AD_SERVICE_ADDR: adservice:9555
+      SHOPPING_ASSISTANT_SERVICE_ADDR: shoppingassistantservice:80
+      ENABLE_PROFILER: "0"
+    ports:
+      # Direct access to the baseline frontend, bypassing BranchBox's edge.
+      - "127.0.0.1:8081:8080"
+    depends_on: [productcatalogservice, currencyservice, cartservice, recommendationservice, shippingservice, checkoutservice, adservice]
+    restart: unless-stopped
+    networks: [default]
+
+  checkoutservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/checkoutservice:v0.10.7
+    environment:
+      PORT: "5050"
+      PRODUCT_CATALOG_SERVICE_ADDR: productcatalogservice:3550
+      SHIPPING_SERVICE_ADDR: shippingservice:50051
+      PAYMENT_SERVICE_ADDR: paymentservice:50051
+      EMAIL_SERVICE_ADDR: emailservice:5000
+      CURRENCY_SERVICE_ADDR: currencyservice:7000
+      CART_SERVICE_ADDR: cartservice:7070
+    restart: unless-stopped
+    networks: [default]
+
+  productcatalogservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/productcatalogservice:v0.10.7
+    environment:
+      PORT: "3550"
+      DISABLE_PROFILER: "1"
+    restart: unless-stopped
+    networks: [default]
+
+  currencyservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/currencyservice:v0.10.7
+    environment:
+      PORT: "7000"
+      DISABLE_PROFILER: "1"
+    restart: unless-stopped
+    networks: [default]
+
+  cartservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/cartservice:v0.10.7
+    environment:
+      REDIS_ADDR: redis-cart:6379
+    depends_on: [redis-cart]
+    restart: unless-stopped
+    networks: [default]
+
+  redis-cart:
+    image: redis:alpine
+    restart: unless-stopped
+    networks: [default]
+
+  recommendationservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/recommendationservice:v0.10.7
+    environment:
+      PORT: "8080"
+      PRODUCT_CATALOG_SERVICE_ADDR: productcatalogservice:3550
+      DISABLE_PROFILER: "1"
+    restart: unless-stopped
+    networks: [default]
+
+  shippingservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/shippingservice:v0.10.7
+    environment:
+      PORT: "50051"
+      DISABLE_PROFILER: "1"
+    restart: unless-stopped
+    networks: [default]
+
+  paymentservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/paymentservice:v0.10.7
+    environment:
+      PORT: "50051"
+      DISABLE_PROFILER: "1"
+    restart: unless-stopped
+    networks: [default]
+
+  emailservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/emailservice:v0.10.7
+    environment:
+      # Upstream maps Service port 5000 -> container port 8080. Compose has no
+      # Service abstraction, so the container listens on 5000 directly.
+      PORT: "5000"
+      DISABLE_PROFILER: "1"
+    restart: unless-stopped
+    networks: [default]
+
+  adservice:
+    image: us-central1-docker.pkg.dev/online-boutique-ci/microservices-demo/adservice:v0.10.7
+    environment:
+      PORT: "9555"
+    restart: unless-stopped
+    networks: [default]
+
+networks:
+  default:
+    # Fixed name so BranchBox can attach sandbox containers to it.
+    name: branchbox-online-boutique

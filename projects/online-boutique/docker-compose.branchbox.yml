@@ -1,0 +1,184 @@
+# BranchBox layer for the Online Boutique baseline.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.branchbox.yml up -d --build
+#
+# Adds, without editing docker-compose.yml:
+#   - branchbox-controller   control plane (REST API on port 8090)
+#   - branchbox-edge         entry point on port 8080 that tags traffic
+#   - <service>-sidecar      one transparent routing proxy per service
+#
+# Deployment settings (bind address, public domain, API token, repository)
+# come from a .env file next to this one; see .env.example.
+#
+# Every service is turned into a two-container "pod", exactly like a
+# Kubernetes pod with an injected sidecar: the sidecar owns the network
+# namespace and the service's DNS name, installs its interception rules,
+# and only then is the service started inside that namespace. This
+# guarantees that even connections opened at startup (gRPC clients dial
+# eagerly) are intercepted.
+#
+# For another application, the same file is produced mechanically from its
+# compose file — the application itself is never changed.
+
+x-sidecar: &sidecar
+  # Built once by branchbox-edge (same image, different mode).
+  image: branchbox/proxy:dev
+  pull_policy: never
+  command: ["sidecar"]
+  cap_add: [NET_ADMIN]
+  restart: unless-stopped
+  depends_on: [branchbox-controller]
+  healthcheck:
+    test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:15000/ready"]
+    interval: 2s
+    timeout: 2s
+    retries: 15
+
+services:
+  branchbox-controller:
+    image: branchbox/controller:dev
+    build:
+      context: ../..
+      dockerfile: deploy/controller.Dockerfile
+    container_name: branchbox-controller
+    environment:
+      BB_PROJECT_FILE: /etc/branchbox/branchbox.yaml
+      BB_DATA_DIR: /data
+      BB_PROXY_IMAGE: branchbox/proxy:dev
+      BB_ADVERTISE_URL: http://branchbox-controller:8090
+      # Deployment settings, read from .env (see .env.example).
+      BB_API_TOKEN: ${BB_API_TOKEN:-}
+      BB_REPOSITORY_URL: ${BB_REPOSITORY_URL:-}
+      BB_EDGE_DOMAIN: ${BB_EDGE_DOMAIN:-localhost}
+      BB_EDGE_PORT: ${BB_EDGE_PORT:-8080}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./branchbox.yaml:/etc/branchbox/branchbox.yaml:ro
+      # The application's Git repository (sandboxes are built from its branches).
+      - ${BB_TARGET_REPO:-../../../microservices-demo}:/repos/microservices-demo:ro
+      - branchbox-data:/data
+    ports:
+      - "${BB_BIND_ADDRESS:-127.0.0.1}:8090:8090"
+    restart: unless-stopped
+    networks: [default]
+
+  branchbox-edge:
+    image: branchbox/proxy:dev
+    build:
+      context: ../..
+      dockerfile: deploy/proxy.Dockerfile
+    command: ["edge"]
+    environment:
+      BB_EDGE_SERVICE: frontend
+      BB_EDGE_UPSTREAM: frontend:8080
+      BB_EDGE_DOMAIN: ${BB_EDGE_DOMAIN:-localhost}
+      BB_API_TOKEN: ${BB_API_TOKEN:-}
+    ports:
+      - "${BB_BIND_ADDRESS:-127.0.0.1}:${BB_EDGE_PORT:-8080}:8080"
+    restart: unless-stopped
+    depends_on: [branchbox-controller]
+    networks: [default]
+
+  # --- sidecars: own the network namespace and the service's DNS name -----
+
+  frontend-sidecar:
+    <<: *sidecar
+    environment: { BB_SERVICE: frontend, BB_API_TOKEN: "${BB_API_TOKEN:-}" }
+    networks: { default: { aliases: [frontend] } }
+    ports:
+      # Direct access to the baseline frontend, bypassing the edge.
+      - "${BB_BIND_ADDRESS:-127.0.0.1}:${BB_DIRECT_PORT:-8081}:8080"
+  checkoutservice-sidecar:
+    <<: *sidecar
+    environment: { BB_SERVICE: checkoutservice, BB_API_TOKEN: "${BB_API_TOKEN:-}" }
+    networks: { default: { aliases: [checkoutservice] } }
+  productcatalogservice-sidecar:
+    <<: *sidecar
+    environment: { BB_SERVICE: productcatalogservice, BB_API_TOKEN: "${BB_API_TOKEN:-}" }
+    networks: { default: { aliases: [productcatalogservice] } }
+  currencyservice-sidecar:
+    <<: *sidecar
+    environment: { BB_SERVICE: currencyservice, BB_API_TOKEN: "${BB_API_TOKEN:-}" }
+    networks: { default: { aliases: [currencyservice] } }
+  cartservice-sidecar:
+    <<: *sidecar
+    environment: { BB_SERVICE: cartservice, BB_API_TOKEN: "${BB_API_TOKEN:-}" }
+    networks: { default: { aliases: [cartservice] } }
+  recommendationservice-sidecar:
+    <<: *sidecar
+    environment: { BB_SERVICE: recommendationservice, BB_API_TOKEN: "${BB_API_TOKEN:-}" }
+    networks: { default: { aliases: [recommendationservice] } }
+  shippingservice-sidecar:
+    <<: *sidecar
+    environment: { BB_SERVICE: shippingservice, BB_API_TOKEN: "${BB_API_TOKEN:-}" }
+    networks: { default: { aliases: [shippingservice] } }
+  paymentservice-sidecar:
+    <<: *sidecar
+    environment: { BB_SERVICE: paymentservice, BB_API_TOKEN: "${BB_API_TOKEN:-}" }
+    networks: { default: { aliases: [paymentservice] } }
+  emailservice-sidecar:
+    <<: *sidecar
+    environment: { BB_SERVICE: emailservice, BB_API_TOKEN: "${BB_API_TOKEN:-}" }
+    networks: { default: { aliases: [emailservice] } }
+  adservice-sidecar:
+    <<: *sidecar
+    environment: { BB_SERVICE: adservice, BB_API_TOKEN: "${BB_API_TOKEN:-}" }
+    networks: { default: { aliases: [adservice] } }
+
+  # --- application services: join their sidecar's namespace ----------------
+  # (!reset drops the service's own network/ports from docker-compose.yml;
+  # it cannot be shared through a YAML anchor, hence the repetition.)
+
+  frontend:
+    networks: !reset []
+    ports: !reset []
+    network_mode: "service:frontend-sidecar"
+    depends_on: { frontend-sidecar: { condition: service_healthy } }
+  checkoutservice:
+    networks: !reset []
+    ports: !reset []
+    network_mode: "service:checkoutservice-sidecar"
+    depends_on: { checkoutservice-sidecar: { condition: service_healthy } }
+  productcatalogservice:
+    networks: !reset []
+    ports: !reset []
+    network_mode: "service:productcatalogservice-sidecar"
+    depends_on: { productcatalogservice-sidecar: { condition: service_healthy } }
+  currencyservice:
+    networks: !reset []
+    ports: !reset []
+    network_mode: "service:currencyservice-sidecar"
+    depends_on: { currencyservice-sidecar: { condition: service_healthy } }
+  cartservice:
+    networks: !reset []
+    ports: !reset []
+    network_mode: "service:cartservice-sidecar"
+    depends_on: { cartservice-sidecar: { condition: service_healthy } }
+  recommendationservice:
+    networks: !reset []
+    ports: !reset []
+    network_mode: "service:recommendationservice-sidecar"
+    depends_on: { recommendationservice-sidecar: { condition: service_healthy } }
+  shippingservice:
+    networks: !reset []
+    ports: !reset []
+    network_mode: "service:shippingservice-sidecar"
+    depends_on: { shippingservice-sidecar: { condition: service_healthy } }
+  paymentservice:
+    networks: !reset []
+    ports: !reset []
+    network_mode: "service:paymentservice-sidecar"
+    depends_on: { paymentservice-sidecar: { condition: service_healthy } }
+  emailservice:
+    networks: !reset []
+    ports: !reset []
+    network_mode: "service:emailservice-sidecar"
+    depends_on: { emailservice-sidecar: { condition: service_healthy } }
+  adservice:
+    networks: !reset []
+    ports: !reset []
+    network_mode: "service:adservice-sidecar"
+    depends_on: { adservice-sidecar: { condition: service_healthy } }
+
+volumes:
+  branchbox-data:
