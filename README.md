@@ -197,6 +197,31 @@ Teammates only need Git and `branchbox.exe`, with `BRANCHBOX_CONTROLLER` and
 
 ---
 
+## Production follows `main`
+
+The full workflow is: **branch → sandbox (test against live production) →
+merge → production**. Production (the baseline) follows a branch of the
+repository, `main` by default (`production:` in `branchbox.yaml`):
+
+* For every service, BranchBox compares the Git tree of its directory on
+  `main` with `repository.baseRef` (the release the prebuilt images were made
+  from). Unchanged services keep the prebuilt upstream images; changed ones
+  are built from `main` and swapped in. Images are tagged by tree hash, so a
+  merge that touches one service rebuilds and restarts only that service.
+* **Automatic:** the controller checks `main` every `pollSeconds` (30 s) —
+  merge a pull request on GitHub and production updates by itself.
+  **Manual:** `branchbox production update` deploys the latest `main` now.
+* **Safety:** a service that fails to start is rolled back to the previous
+  container immediately; after each update a smoke test requests the entry
+  service's home page, and a 5xx/no answer rolls back every service changed
+  by that update. A version that failed is not retried automatically.
+* `branchbox production` shows the deployed commit, what each service runs
+  and the update history; `branchbox production logs <service>` shows a
+  production build log.
+
+Sandboxes are layered on whatever production currently runs, so a teammate's
+sandbox keeps working across a production update.
+
 ## Validation (MP-I success criteria)
 
 ```powershell
@@ -239,6 +264,9 @@ branchbox [--controller URL] [--token TOKEN] <command>
   sandbox get ID
   sandbox logs ID [--component app|sidecar|build] [--tail N] [--follow]
   sandbox delete ID... | --all
+  production                       deployed commit of main, per-service images, update history
+  production update                deploy the latest main now (also automatic)
+  production logs SERVICE          build log of a service's last production build
   trace TRACE_ID                   every routing decision for one request
   events [--env ID] [--limit N]    recent routing decisions
 ```
@@ -254,6 +282,8 @@ Controller REST API (the MP-II dashboard will use the same endpoints):
 | `GET /v1/sandboxes/{id}/logs?component=app\|sidecar\|build&follow=1` | logs |
 | `POST /v1/events`, `GET /v1/events?env=&trace=&limit=` | routing events |
 | `GET /v1/traces/{traceId}` | all hops of one request |
+| `GET /v1/production`, `POST /v1/production/update` | production state / deploy latest `main` now |
+| `GET /v1/production/logs/{service}` | production build log |
 
 ---
 

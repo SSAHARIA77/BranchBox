@@ -47,4 +47,26 @@ type Runtime interface {
 	Alive(ctx context.Context, spec SandboxSpec) bool
 	// Logs writes a component's logs to w.
 	Logs(ctx context.Context, spec SandboxSpec, c Component, tail int, follow bool, w io.Writer) error
+
+	// BaselineOf describes the running production container of service.
+	BaselineOf(ctx context.Context, service string) (Baseline, error)
+	// ReplaceBaseline swaps the production container of service for one
+	// running image, keeping its configuration and network identity, and
+	// waits until it listens on port.
+	ReplaceBaseline(ctx context.Context, service string, port int, image string, labels map[string]string) error
+	// ImageExists reports whether image is available locally.
+	ImageExists(ctx context.Context, image string) bool
 }
+
+// Baseline is the running production container of one service.
+type Baseline struct {
+	Container string
+	Image     string
+	// UpstreamImage is the image the deployment originally specified (for
+	// Online Boutique: Google's prebuilt image), even after BranchBox has
+	// replaced the container with one built from the production branch.
+	UpstreamImage string
+}
+
+// LabelUpstreamImage records a replaced container's original image.
+const LabelUpstreamImage = "branchbox.upstream-image"

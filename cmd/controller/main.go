@@ -52,14 +52,26 @@ func main() {
 		log.Fatalf("reconcile: %v", err)
 	}
 
+	// Production follows a branch (default main). Environment overrides let
+	// the same branchbox.yaml be used for rehearsals on a test branch.
+	prodBranch := env("BB_PRODUCTION_BRANCH", cfg.Production.Branch)
+	prodAuto := *cfg.Production.AutoUpdate
+	if v := os.Getenv("BB_PRODUCTION_AUTO"); v != "" {
+		prodAuto = v == "1" || strings.EqualFold(v, "true")
+	}
+	prod := controller.NewProduction(cfg, repo, rt, dataDir, prodBranch, prodAuto,
+		time.Duration(cfg.Production.PollSeconds)*time.Second)
+	go prod.Run(ctx)
+
 	srv := &http.Server{
 		Addr: env("BB_LISTEN", ":8090"),
 		Handler: (&controller.Server{
-			Config:  cfg,
-			Manager: mgr,
-			Routes:  routes,
-			Events:  controller.NewEventLog(20000),
-			Token:   token,
+			Config:     cfg,
+			Manager:    mgr,
+			Routes:     routes,
+			Events:     controller.NewEventLog(20000),
+			Token:      token,
+			Production: prod,
 			Info: api.Info{
 				Project:      cfg.Project,
 				EntryService: cfg.Entry.Service,

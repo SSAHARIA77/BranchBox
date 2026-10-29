@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -94,7 +96,7 @@ func (d *Docker) Deploy(ctx context.Context, s SandboxSpec) (string, error) {
 	}
 
 	addr := net.JoinHostPort(pod, strconv.Itoa(s.Port))
-	if err := d.waitListening(ctx, s, addr, 3*time.Minute); err != nil {
+	if err := d.waitListening(ctx, d.appName(s), addr, 3*time.Minute); err != nil {
 		return "", err
 	}
 	return addr, nil
@@ -141,16 +143,32 @@ func (d *Docker) Logs(ctx context.Context, s SandboxSpec, c Component, tail int,
 // ports, feature flags) as the service it replaces, with no duplication in
 // BranchBox's own config.
 func (d *Docker) baselineEnv(ctx context.Context, service string) ([]string, error) {
+	id, err := d.findBaseline(ctx, service)
+	if err != nil {
+		return nil, err
+	}
+	return d.composeEnv(ctx, id)
+}
+
+// findBaseline returns the ID of the running production container of
+// service, identified by its compose labels.
+func (d *Docker) findBaseline(ctx context.Context, service string) (string, error) {
 	id, err := docker(ctx, "ps", "-q",
 		"--filter", "label=com.docker.compose.project="+d.ComposeProject,
 		"--filter", "label=com.docker.compose.service="+service)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	id = strings.TrimSpace(strings.SplitN(id, "\n", 2)[0])
 	if id == "" {
-		return nil, fmt.Errorf("baseline container for %q is not running (compose project %q)", service, d.ComposeProject)
+		return "", fmt.Errorf("baseline container for %q is not running (compose project %q)", service, d.ComposeProject)
 	}
+	return id, nil
+}
+
+// composeEnv returns the environment a container was started with, minus
+// the variables baked into its image.
+func (d *Docker) composeEnv(ctx context.Context, id string) ([]string, error) {
 	var containerEnv, imageEnv []string
 	out, err := docker(ctx, "inspect", "-f", "{{json .Config.Env}}", id)
 	if err != nil {
@@ -183,17 +201,122 @@ func (d *Docker) baselineEnv(ctx context.Context, service string) ([]string, err
 	return env, nil
 }
 
-// waitListening waits until the sandboxed service accepts TCP connections,
+// BaselineOf implements Runtime.
+func (d *Docker) BaselineOf(ctx context.Context, service string) (Baseline, error) {
+	id, err := d.findBaseline(ctx, service)
+	if err != nil {
+		return Baseline{}, err
+	}
+	out, err := docker(ctx, "inspect", "-f", "{{.Config.Image}}|{{index .Config.Labels \""+LabelUpstreamImage+"\"}}", id)
+	if err != nil {
+		return Baseline{}, err
+	}
+	image, upstream, _ := strings.Cut(strings.TrimSpace(out), "|")
+	if upstream == "" || upstream == "<no value>" {
+		upstream = image
+	}
+	return Baseline{Container: id, Image: image, UpstreamImage: upstream}, nil
+}
+
+// ReplaceBaseline implements Runtime. The production container is removed
+// and recreated from image with the same name, environment, labels,
+// restart policy and network namespace (its sidecar's), so its address and
+// interception are unchanged. If the new version does not start listening,
+// the previous container configuration is restored and an error returned.
+func (d *Docker) ReplaceBaseline(ctx context.Context, service string, port int, image string, labels map[string]string) error {
+	id, err := d.findBaseline(ctx, service)
+	if err != nil {
+		return err
+	}
+	out, err := docker(ctx, "inspect", id)
+	if err != nil {
+		return err
+	}
+	var meta []struct {
+		Name   string
+		Config struct {
+			Image  string
+			Labels map[string]string
+		}
+		HostConfig struct {
+			NetworkMode   string
+			RestartPolicy struct{ Name string }
+		}
+	}
+	if err := json.Unmarshal([]byte(out), &meta); err != nil || len(meta) != 1 {
+		return fmt.Errorf("inspecting %s: %v", service, err)
+	}
+	env, err := d.composeEnv(ctx, id)
+	if err != nil {
+		return err
+	}
+	m := meta[0]
+	name := strings.TrimPrefix(m.Name, "/")
+	runArgs := func(image string, labels map[string]string) []string {
+		keys := make([]string, 0, len(labels))
+		for k := range labels {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		args := []string{"run", "-d", "--name", name, "--network", m.HostConfig.NetworkMode}
+		if p := m.HostConfig.RestartPolicy.Name; p != "" && p != "no" {
+			args = append(args, "--restart", p)
+		}
+		for _, k := range keys {
+			args = append(args, "--label", k+"="+labels[k])
+		}
+		for _, kv := range env {
+			args = append(args, "-e", kv)
+		}
+		return append(args, image)
+	}
+	newLabels := maps.Clone(m.Config.Labels)
+	if newLabels == nil {
+		newLabels = map[string]string{}
+	}
+	maps.Copy(newLabels, labels)
+	addr := net.JoinHostPort(service, strconv.Itoa(port))
+
+	if _, err := docker(ctx, "rm", "-f", id); err != nil {
+		return err
+	}
+	_, err = docker(ctx, runArgs(image, newLabels)...)
+	if err == nil {
+		err = d.waitListening(ctx, name, addr, 3*time.Minute)
+	}
+	if err == nil {
+		return nil
+	}
+
+	// Roll back to exactly what was running before.
+	rollback := context.Background()
+	_, _ = docker(rollback, "rm", "-f", name)
+	if _, rbErr := docker(rollback, runArgs(m.Config.Image, m.Config.Labels)...); rbErr != nil {
+		return fmt.Errorf("%v; ROLLBACK FAILED: %v", err, rbErr)
+	}
+	if rbErr := d.waitListening(rollback, name, addr, 3*time.Minute); rbErr != nil {
+		return fmt.Errorf("%v; rolled back, but the previous version is not listening: %v", err, rbErr)
+	}
+	return fmt.Errorf("%v (rolled back to %s)", err, m.Config.Image)
+}
+
+// ImageExists implements Runtime.
+func (d *Docker) ImageExists(ctx context.Context, image string) bool {
+	_, err := docker(ctx, "image", "inspect", "-f", "{{.Id}}", image)
+	return err == nil
+}
+
+// waitListening waits until a service accepts TCP connections at addr,
 // failing fast if its container exits.
-func (d *Docker) waitListening(ctx context.Context, s SandboxSpec, addr string, timeout time.Duration) error {
+func (d *Docker) waitListening(ctx context.Context, container, addr string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
 			c.Close()
 			return nil
 		}
-		if out, err := docker(ctx, "inspect", "-f", "{{.State.Running}}", d.appName(s)); err == nil && strings.TrimSpace(out) == "false" {
-			logs, _ := docker(ctx, "logs", "--tail", "20", d.appName(s))
+		if out, err := docker(ctx, "inspect", "-f", "{{.State.Running}}", container); err == nil && strings.TrimSpace(out) == "false" {
+			logs, _ := docker(ctx, "logs", "--tail", "20", container)
 			return fmt.Errorf("service container exited during startup:\n%s", logs)
 		}
 		select {

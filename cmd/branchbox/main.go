@@ -30,6 +30,10 @@ Commands:
   sandbox logs ID [--component app|sidecar|build] [--tail N] [--follow]
                                    Logs of the sandboxed service, its sidecar, or its build
   sandbox delete ID... | --all     Remove sandboxes (traffic falls back to the baseline)
+  production                       What production runs and which commit of main it is at
+  production update                Deploy the latest main to production now (it also
+                                   happens automatically when auto-update is on)
+  production logs SERVICE          Build log of a service's last production build
   trace TRACE_ID                   Every routing decision made for one request
   events [--env ID] [--limit N]    Recent routing decisions
 
@@ -58,6 +62,8 @@ func main() {
 		err = c.services()
 	case "sandbox", "sb":
 		err = c.sandbox(args[1:])
+	case "production", "prod":
+		err = c.production(args[1:])
 	case "trace":
 		if len(args) != 2 {
 			err = fmt.Errorf("usage: branchbox trace TRACE_ID")

@@ -168,10 +168,28 @@ container pair — not two copies of the 10-service application.
 Checkout on B or C and show `branchbox trace <id>` (the `X-Branchbox-Trace`
 response header, visible in the browser's developer tools → Network).
 
-**Clean up.** B: `branchbox sandbox delete anshi`, refresh → banner says
-*no sandbox with this ID — every service from production*; click
-*back to production*. The production deployment was never rebuilt or
-restarted.
+**Ship it: merge to main → production updates itself.** B's change is
+tested, so on GitHub open a pull request `feature/anshi-sale → main` and
+merge it. On A, run `branchbox production` a few times (or just refresh the
+production shop): within about a minute production shows B's sale for
+everyone. Point out in `branchbox production`:
+
+* only `productcatalogservice` was rebuilt and restarted — the other services
+  were untouched (unchanged code keeps Google's images);
+* the update history line `auto  … -> <commit> "catalog: weekend sale"`;
+* C's shipping sandbox still works, now on top of the new production.
+
+(If something goes wrong, `branchbox production update` forces a deployment;
+a broken version is rolled back automatically and production keeps running.)
+
+**Clean up.** B: `branchbox sandbox delete anshi` — the sandbox is no longer
+needed because its change is now in production. C: delete theirs, refresh →
+banner says *no sandbox with this ID — every service from production*; click
+*back to production*.
+
+**Reset for the next rehearsal.** The merge changed `main`. To return to the
+original state, revert the merge on GitHub (the pull request's *Revert*
+button, then merge the revert PR) — production follows within a minute.
 
 If a live build fails, fall back to the prepared branches
 (`feature/diwali-sale`, `feature/express-shipping`, `fix/payment-validation`).

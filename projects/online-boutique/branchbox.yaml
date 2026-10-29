@@ -23,6 +23,15 @@ entry:
 limits:
   maxSandboxes: 10
 
+# Production follows this branch. When it moves (a pull request is merged),
+# BranchBox rebuilds only the services whose directory changed and swaps them
+# into production. Services whose code is identical to repository.baseRef
+# keep running the prebuilt upstream images.
+production:
+  branch: main
+  autoUpdate: true   # also available on demand: branchbox production update
+  pollSeconds: 30
+
 # name: DNS name the other services dial; port: the port they dial;
 # build.context: service source directory inside the repository.
 services:

@@ -16,6 +16,51 @@ type Info struct {
 	Repository string `json:"repository"`
 }
 
+// Production describes the baseline ("production") deployment, which
+// follows a branch of the repository (normally main).
+type Production struct {
+	Branch      string              `json:"branch"`
+	Commit      string              `json:"commit,omitempty"`
+	Subject     string              `json:"subject,omitempty"`
+	AutoUpdate  bool                `json:"autoUpdate"`
+	PollSeconds int                 `json:"pollSeconds"`
+	Status      string              `json:"status"` // starting | in sync | updating | error
+	LastError   string              `json:"lastError,omitempty"`
+	LastChecked *time.Time          `json:"lastChecked,omitempty"`
+	Services    []ProductionService `json:"services"`
+	History     []ProductionUpdate  `json:"history"`
+}
+
+// Production statuses.
+const (
+	ProductionStarting = "starting"
+	ProductionInSync   = "in sync"
+	ProductionUpdating = "updating"
+	ProductionError    = "error"
+)
+
+// ProductionService is what one production service currently runs.
+type ProductionService struct {
+	Name  string `json:"name"`
+	Image string `json:"image"`
+	// Source is "upstream" when the service still runs the prebuilt image
+	// (its code is unchanged since repository.baseRef), or "branch" when it
+	// was built from the production branch.
+	Source string `json:"source"`
+}
+
+// ProductionUpdate records one change to production.
+type ProductionUpdate struct {
+	Time     time.Time `json:"time"`
+	Trigger  string    `json:"trigger"` // startup | auto | manual
+	From     string    `json:"from,omitempty"`
+	To       string    `json:"to"`
+	Subject  string    `json:"subject,omitempty"`
+	Services []string  `json:"services"`
+	Seconds  float64   `json:"seconds"`
+	Error    string    `json:"error,omitempty"`
+}
+
 // Service is one routable microservice of the onboarded project.
 type Service struct {
 	Name     string `json:"name"`

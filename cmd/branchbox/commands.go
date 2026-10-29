@@ -82,6 +82,14 @@ func (c *client) status() error {
 	fmt.Printf("Repository   %s (baseline: %s)\n", cfg.Repository.URL, cfg.Repository.BaseRef)
 	fmt.Printf("Entry        %s via %s\n", cfg.Entry.Service, c.baselineURL())
 	fmt.Printf("Services     %d\n", len(rt.Services))
+	var prod api.Production
+	if err := c.get("/v1/production", &prod); err == nil {
+		auto := "auto-update off"
+		if prod.AutoUpdate {
+			auto = fmt.Sprintf("auto-update every %ds", prod.PollSeconds)
+		}
+		fmt.Printf("Production   %s @ %s, %s (%s)\n", prod.Branch, short(prod.Commit), prod.Status, auto)
+	}
 	fmt.Printf("Routes       %d active (table version %d)\n", len(rt.Routes), rt.Version)
 	if len(rt.Routes) > 0 {
 		w := table()

@@ -53,6 +53,27 @@ func (r *Repo) Resolve(ctx context.Context, ref string) (string, error) {
 	return "", fmt.Errorf("branch %q not found in %s", ref, r.URL)
 }
 
+// Tree returns the Git tree hash of subdir at commit. Two commits with the
+// same tree hash for a service's directory contain identical source for
+// that service, which is how BranchBox decides what needs rebuilding.
+func (r *Repo) Tree(ctx context.Context, commit, subdir string) (string, error) {
+	subdir = strings.Trim(filepath.ToSlash(subdir), "/")
+	out, err := git(ctx, r.Dir, "rev-parse", "--verify", "--quiet", commit+":"+subdir)
+	if err != nil {
+		return "", fmt.Errorf("%s does not exist at %s", subdir, commit)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// Subject returns the first line of a commit message.
+func (r *Repo) Subject(ctx context.Context, commit string) string {
+	out, err := git(ctx, r.Dir, "log", "-1", "--format=%s", commit)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
 // Export writes the subtree subdir of commit into dest.
 func (r *Repo) Export(ctx context.Context, commit, subdir, dest string) error {
 	treeish := commit

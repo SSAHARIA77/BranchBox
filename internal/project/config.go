@@ -20,6 +20,7 @@ type Config struct {
 	Runtime    Runtime    `yaml:"runtime" json:"runtime"`
 	Entry      Entry      `yaml:"entry" json:"entry"`
 	Limits     Limits     `yaml:"limits" json:"limits"`
+	Production Production `yaml:"production" json:"production"`
 	Services   []Service  `yaml:"services" json:"services"`
 }
 
@@ -43,6 +44,18 @@ type Entry struct {
 // Limits bound resource usage.
 type Limits struct {
 	MaxSandboxes int `yaml:"maxSandboxes" json:"maxSandboxes"`
+}
+
+// Production makes the baseline follow a branch: when the branch moves
+// (a pull request is merged), the services whose code changed are rebuilt
+// and swapped into production.
+type Production struct {
+	Branch      string `yaml:"branch" json:"branch"`           // default "main"
+	AutoUpdate  *bool  `yaml:"autoUpdate" json:"autoUpdate"`   // default true
+	PollSeconds int    `yaml:"pollSeconds" json:"pollSeconds"` // default 30
+	// SmokePath is requested on the entry service after every production
+	// update; a 5xx answer or no answer rolls the update back. Default "/".
+	SmokePath string `yaml:"smokePath" json:"smokePath"`
 }
 
 // Service is one microservice that can be sandboxed.
@@ -71,6 +84,19 @@ func Load(path string) (*Config, error) {
 	}
 	if c.Limits.MaxSandboxes == 0 {
 		c.Limits.MaxSandboxes = 10
+	}
+	if c.Production.Branch == "" {
+		c.Production.Branch = "main"
+	}
+	if c.Production.AutoUpdate == nil {
+		auto := true
+		c.Production.AutoUpdate = &auto
+	}
+	if c.Production.PollSeconds <= 0 {
+		c.Production.PollSeconds = 30
+	}
+	if c.Production.SmokePath == "" {
+		c.Production.SmokePath = "/"
 	}
 	if err := c.validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)

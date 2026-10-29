@@ -21,6 +21,8 @@ type Server struct {
 	Routes  *RouteHub
 	Events  *EventLog
 	Info    api.Info
+	// Production follows the production branch; nil disables the endpoints.
+	Production *Production
 	// Token, when set, must accompany every request except /healthz as
 	// "Authorization: Bearer <token>". The controller drives Docker, so it
 	// must never be reachable from a network without one.
@@ -42,6 +44,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/events", s.postEvents)
 	mux.HandleFunc("GET /v1/events", s.getEvents)
 	mux.HandleFunc("GET /v1/traces/{trace}", s.getTrace)
+	if s.Production != nil {
+		mux.HandleFunc("GET /v1/production", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, s.Production.State())
+		})
+		mux.HandleFunc("POST /v1/production/update", func(w http.ResponseWriter, _ *http.Request) {
+			s.Production.Trigger("manual")
+			writeJSON(w, http.StatusAccepted, s.Production.State())
+		})
+		mux.HandleFunc("GET /v1/production/logs/{service}", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			if err := s.Production.BuildLog(r.PathValue("service"), w); err != nil {
+				writeError(w, http.StatusNotFound, err)
+			}
+		})
+	}
 	return s.authenticate(mux)
 }
 
