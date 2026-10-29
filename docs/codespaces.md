@@ -19,7 +19,7 @@ that "laptop A / the server" is the Codespace and the addresses are
 
 ## 2. Create the codespace
 
-On https://github.com/SSAHARIA77/BranchBox-GoogleOnlineBoutique:
+On https://github.com/SSAHARIA77/BranchBox:
 **Code → Codespaces → ⋯ → New with options** → Machine type **4-core**
 (the config requests 4 cores / 16 GB) → **Create codespace**.
 
