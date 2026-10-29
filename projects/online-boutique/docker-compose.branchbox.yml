@@ -51,6 +51,7 @@ services:
       BB_REPOSITORY_URL: ${BB_REPOSITORY_URL:-}
       BB_EDGE_DOMAIN: ${BB_EDGE_DOMAIN:-localhost}
       BB_EDGE_PORT: ${BB_EDGE_PORT:-8080}
+      BB_PUBLIC_URL: ${BB_PUBLIC_URL:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./branchbox.yaml:/etc/branchbox/branchbox.yaml:ro

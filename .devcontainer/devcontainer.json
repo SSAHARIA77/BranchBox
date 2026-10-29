@@ -1,0 +1,18 @@
+{
+  // GitHub Codespaces environment for running BranchBox + Online Boutique
+  // in the cloud. After the codespace starts, run:  ./scripts/codespace-setup.sh
+  "name": "BranchBox",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/go:1": { "version": "latest" }
+  },
+  // Online Boutique (11 services) + sidecars + sandbox builds need room.
+  "hostRequirements": { "cpus": 4, "memory": "16gb", "storage": "32gb" },
+  "forwardPorts": [8080, 8090],
+  "portsAttributes": {
+    "8080": { "label": "Shop (BranchBox edge)", "onAutoForward": "silent" },
+    "8090": { "label": "BranchBox controller API", "onAutoForward": "silent" }
+  },
+  "postCreateCommand": "go build -o bin/branchbox ./cmd/branchbox"
+}

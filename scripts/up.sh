@@ -17,5 +17,6 @@ if command -v go >/dev/null 2>&1; then
     (cd "$root" && go build -o bin/branchbox ./cmd/branchbox)
 fi
 domain=$(grep -s '^BB_EDGE_DOMAIN=' "$project/.env" | cut -d= -f2 || true)
+public=$(grep -s '^BB_PUBLIC_URL=' "$project/.env" | cut -d= -f2 || true)
 echo
-echo "BranchBox is running. Shop: http://${domain:-localhost}:8080   Controller: port 8090"
+echo "BranchBox is running. Shop: ${public:-http://${domain:-localhost}:8080}   Controller: port 8090"

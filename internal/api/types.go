@@ -10,7 +10,10 @@ type Info struct {
 	EntryService string `json:"entryService"`
 	EdgeDomain   string `json:"edgeDomain"` // sandbox URLs are http://<id>.<EdgeDomain>:<EdgePort>
 	EdgePort     string `json:"edgePort"`
-	Repository   string `json:"repository"`
+	// PublicURL, when set, is the exact URL the shop is reached at (e.g. a
+	// GitHub Codespaces or tunnel URL) and overrides EdgeDomain/EdgePort.
+	PublicURL  string `json:"publicUrl,omitempty"`
+	Repository string `json:"repository"`
 }
 
 // Service is one routable microservice of the onboarded project.

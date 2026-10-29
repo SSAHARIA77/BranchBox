@@ -34,6 +34,9 @@ use NITK-NET for the three laptops. Instead:
 * A's address on its own hotspot is usually `192.168.137.1`
   (`ipconfig` → "Local Area Connection* N").
 
+**Option 3 — GitHub Codespaces** (free, no card, HTTPS links): see
+[codespaces.md](codespaces.md).
+
 **Option 2 — a cloud VM** (Azure for Students / GitHub Student Pack credit;
 x86, 2 vCPU, 8 GB, Ubuntu). More "production"-like and reachable from
 anywhere, but costs setup time and credit, and the college network may block

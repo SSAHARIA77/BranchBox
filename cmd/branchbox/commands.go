@@ -37,6 +37,9 @@ func (c *client) edge() api.Info {
 // baselineURL is where the unmodified application is served.
 func (c *client) baselineURL() string {
 	e := c.edge()
+	if e.PublicURL != "" {
+		return e.PublicURL
+	}
 	return fmt.Sprintf("http://%s:%s", e.EdgeDomain, e.EdgePort)
 }
 
@@ -50,7 +53,7 @@ func (c *client) sandboxLink(id string) string {
 // bare IP address (no wildcard DNS available).
 func (c *client) sandboxHost(id string) string {
 	e := c.edge()
-	if net.ParseIP(e.EdgeDomain) != nil {
+	if e.PublicURL != "" || net.ParseIP(e.EdgeDomain) != nil {
 		return ""
 	}
 	return fmt.Sprintf("http://%s.%s:%s", id, e.EdgeDomain, e.EdgePort)

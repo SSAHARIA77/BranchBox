@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -64,6 +65,7 @@ func main() {
 				EntryService: cfg.Entry.Service,
 				EdgeDomain:   env("BB_EDGE_DOMAIN", "localhost"),
 				EdgePort:     env("BB_EDGE_PORT", "8080"),
+				PublicURL:    strings.TrimRight(os.Getenv("BB_PUBLIC_URL"), "/"),
 				Repository:   cfg.Repository.URL,
 			},
 		}).Handler(),
