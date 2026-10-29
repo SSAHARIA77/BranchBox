@@ -33,6 +33,11 @@ func (r *Repo) Fetch(ctx context.Context) error {
 		_, err := git(ctx, "", "clone", "--mirror", r.URL, r.Dir)
 		return err
 	}
+	// The configured URL may have changed since the mirror was created
+	// (e.g. local folder -> GitHub); always fetch from the current one.
+	if _, err := git(ctx, r.Dir, "remote", "set-url", "origin", r.URL); err != nil {
+		return err
+	}
 	_, err := git(ctx, r.Dir, "fetch", "--prune", "origin")
 	return err
 }
