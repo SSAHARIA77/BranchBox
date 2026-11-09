@@ -194,8 +194,14 @@ func (e *Edge) addBanner(resp *http.Response) error {
 		`font:14px system-ui,sans-serif;padding:8px 16px;text-align:center">BranchBox environment <b>%s</b> &mdash; %s &middot; `+
 		`<a href="%s" style="color:#fff">switch</a> &middot; <a href="%s/exit" style="color:#fff">back to production</a></div>`,
 		html.EscapeString(h.env), html.EscapeString(what), controlPrefix, controlPrefix)
-	if i := bytes.LastIndex(body, []byte("</body>")); i >= 0 {
-		body = append(body[:i:i], append([]byte(banner), body[i:]...)...)
+	// Insert right after the opening <body ...> tag. Inserting before
+	// "</body>" is unreliable: real pages (Online Boutique included) emit
+	// content after a stray "</body>", and browsers drop what follows it.
+	if i := bytes.Index(bytes.ToLower(body), []byte("<body")); i >= 0 {
+		if j := bytes.IndexByte(body[i:], '>'); j >= 0 {
+			at := i + j + 1
+			body = append(body[:at:at], append([]byte(banner), body[at:]...)...)
+		}
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))
